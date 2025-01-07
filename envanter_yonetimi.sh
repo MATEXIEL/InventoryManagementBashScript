@@ -63,7 +63,7 @@ kullanici_giris() {
                     ATTEMPTS=$((ATTEMPTS + 1))
                     if [ "$ATTEMPTS" -ge 3 ]; then
                         zenity --error --text="Şifrenizi 3 kez yanlış girdiniz. Hesabınız donduruldu!" --title="Hata" 2>> log.csv
-                        sed -i "/$USERNAME/d" kullanici.csv
+                        grep "$USERNAME" kullanici.csv > dondurulan_kullanicilar.csv && sed -i "/$USERNAME/d" kullanici.csv
                         return
                     fi
                     PASSWORD=$(zenity --entry --title="Kullanıcı Girişi" --text="Şifreyi tekrar girin:" --hide-text --extra-button="Çıkış" 2>> log.csv) 
@@ -581,12 +581,62 @@ kullanici_sil() {
     kullanici_yonetimi
 }
 
+# Kullanıcıyı kurtarma fonksiyonu
+kullanici_kurtar() {
+  # dondurulan_kullanicilar.csv dosyasındaki kullanıcılar listelenir
+  kullanicilar=$(zenity --list --title="Hesabı Dondurulmuş Kullanıcılar" --column="Kullanıcılar" $(cut -d, -f1 dondurulan_kullanicilar.csv 2>> log.csv) 2>> log.csv)
+  
+  if [ -z "$kullanicilar" ]; then
+    zenity --info --text="Hiç kullanıcı seçilmedi." 2>> log.csv
+    return
+  fi
+
+  # Kullanıcı adı sorulur
+  kullanici_ad=$(zenity --entry --title="Kullanıcı Adı" --text="Kurtarmak istediğiniz kullanıcı adını girin:" 2>> log.csv)
+
+  if [ -z "$kullanici_ad" ]; then
+    zenity --info --text="Kullanıcı adı girilmedi." 2>> log.csv
+    kullanici_kurtar
+  fi
+
+  # dondurulan_kullanicilar.csv dosyasında kullanıcı kontrol edilir
+  kullanici_bulundu=$(grep "^$kullanici_ad," dondurulan_kullanicilar.csv 2>> log.csv)
+
+  if [ -z "$kullanici_bulundu" ]; then
+    zenity --error --text="Kullanıcı bulunamadı: $kullanici_ad" 2>> log.csv
+    kullanici_kurtar
+  fi
+
+  # Kullanıcı bilgileri görüntülenir
+  kullanici_bilgileri=$(echo "$kullanici_bulundu" | cut -d, -f1- 2>> log.csv)
+  
+  # Kurtarma işlemi için onay alınır
+  onay=$(zenity --question --title="Onay" --text="Aşağıdaki kullanıcıyı kurtarmak istediğinizden emin misiniz?\n\n$kullanici_bilgileri" 2>> log.csv)
+
+  if [ $? -eq 0 ]; then
+    # Kullanıcı kurtarılır, dondurulan_kullanicilar.csv'den silinir
+    sed -i "/^$kullanici_ad,/d" dondurulan_kullanicilar.csv
+    
+    # Kullanıcı bilgileri kullanici.csv dosyasına eklenir
+    echo "$kullanici_bilgileri" >> kullanici.csv
+
+    # Başarı mesajı
+    zenity --info --text="Kullanıcı başarıyla kurtarıldı ve 'kullanici.csv' dosyasına eklendi." 2>> log.csv
+  else
+    zenity --info --text="İşlem iptal edildi." 2>> log.csv
+    kullanici_kurtar
+  fi
+  
+  kullanici_yonetimi
+}
+
 kullanici_yonetimi() {
     ACTION=$(zenity --list --title="Kullanıcı Yönetimi" --column="İşlem Seç" \
         "Yeni Kullanıcı Ekle" \
         "Kullanıcıları Listele" \
         "Kullanıcı Güncelle" \
         "Kullanıcı Sil" \
+        "Kullanıcı Kurtarma" \
         --width=400 --height=300 2>> log.csv)
 
     case $ACTION in
@@ -601,6 +651,9 @@ kullanici_yonetimi() {
             ;;
         "Kullanıcı Sil")
             kullanici_sil
+            ;;
+        "Kullanıcı Kurtarma")
+            kullanici_kurtar
             ;;
         *)
             main_menu $ROLE
